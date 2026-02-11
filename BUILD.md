@@ -14,6 +14,7 @@ https://zulip.readthedocs.io/en/stable/production/install.html
 # Instructions
 
 1. Add some swap to the node
+> current node doesn't have enough ram to host
 
 ```sh
 fallocate -l 2G /swapfile
