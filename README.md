@@ -14,3 +14,12 @@ Chat backend: https://zulip.com/
 | Domain    | namecheap.com     | spikedoanz@gmail.com  | 1.3  usd (16 / year)
 
 --------------------------------------------------------------------------------
+
+# Backing up
+
+```bash
+su zulip
+/home/zulip/deployments/current/manage.py backup
+```
+
+and then copy the file somewhere safe.
