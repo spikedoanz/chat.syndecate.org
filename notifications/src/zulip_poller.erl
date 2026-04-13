@@ -125,59 +125,15 @@ process_event(_Event, _State) ->
     ok.
 
 process_message(Msg, #{base_url := BaseUrl, channel_filter := Filter}) ->
-    Type = maps:get(<<"type">>, Msg, <<>>),
-    case Type of
-        <<"stream">> ->
-            StreamId = maps:get(<<"stream_id">>, Msg),
-            case should_forward(StreamId, Filter) of
-                true ->
-                    Channel = maps:get(<<"display_recipient">>, Msg, <<>>),
-                    Topic = maps:get(<<"subject">>, Msg, <<>>),
-                    Sender = maps:get(<<"sender_full_name">>, Msg, <<>>),
-                    Content = maps:get(<<"content">>, Msg, <<>>),
-                    MsgId = maps:get(<<"id">>, Msg),
-                    Url = zulip_url:narrow_url(
-                        iolist_to_binary(BaseUrl), StreamId, Topic, MsgId),
-                    Plaintext = html_to_text(iolist_to_binary(BaseUrl), Content),
-                    Text = iolist_to_binary([
-                        <<"#">>, Channel, <<" / ">>, Topic, <<"\n">>,
-                        Sender, <<": ">>, Plaintext, <<"\n\n">>,
-                        Url
-                    ]),
+    StreamId = maps:get(<<"stream_id">>, Msg, -1),
+    case zulip_fmt:should_forward(StreamId, Filter) of
+        true ->
+            case zulip_fmt:format_message(BaseUrl, Msg) of
+                {ok, Text} ->
                     signal_sender:send(binary_to_list(Text));
-                false ->
+                skip ->
                     ok
             end;
-        _ ->
+        false ->
             ok
     end.
-
-should_forward(_StreamId, []) ->
-    true;
-should_forward(StreamId, Filter) ->
-    lists:member(StreamId, Filter).
-
-html_to_text(BaseUrl, Html) ->
-    WithLinks = re:replace(Html,
-        <<"<a[^>]*href=\"([^\"]*)\"[^>]*>([^<]*)</a>">>,
-        fun(Match, _) -> expand_link(BaseUrl, Match) end,
-        [global, {return, binary}]),
-    re:replace(WithLinks, <<"<[^>]*>">>, <<>>, [global, {return, binary}]).
-
-expand_link(BaseUrl, Match) ->
-    case re:run(Match, <<"<a[^>]*href=\"([^\"]*)\"[^>]*>([^<]*)</a>">>,
-                [{capture, [1, 2], binary}]) of
-        {match, [Href, Text]} ->
-            FullUrl = resolve_url(BaseUrl, Href),
-            case FullUrl =:= Text of
-                true -> FullUrl;
-                false -> <<Text/binary, " (", FullUrl/binary, ")">>
-            end;
-        nomatch ->
-            Match
-    end.
-
-resolve_url(BaseUrl, <<"/", _/binary>> = Path) ->
-    <<BaseUrl/binary, Path/binary>>;
-resolve_url(_BaseUrl, Url) ->
-    Url.

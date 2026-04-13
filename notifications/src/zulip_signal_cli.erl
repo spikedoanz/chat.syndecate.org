@@ -1,6 +1,5 @@
 -module(zulip_signal_cli).
 -export([main/0]).
--export([html_to_text/2, should_forward/2]).
 
 %% Single process: polls Zulip, prints formatted messages to stdout,
 %% sends to Signal, and logs status as JSONL.
@@ -77,32 +76,17 @@ handle_events(Events, State) ->
 
 handle_event(#{<<"type">> := <<"message">>, <<"message">> := Msg}, State) ->
     #{base_url := BaseUrl, channel_filter := Filter} = State,
-    case maps:get(<<"type">>, Msg, <<>>) of
-        <<"stream">> ->
-            StreamId = maps:get(<<"stream_id">>, Msg),
-            case should_forward(StreamId, Filter) of
-                true ->
-                    Channel = maps:get(<<"display_recipient">>, Msg, <<>>),
-                    Topic = maps:get(<<"subject">>, Msg, <<>>),
-                    Sender = maps:get(<<"sender_full_name">>, Msg, <<>>),
-                    Content = maps:get(<<"content">>, Msg, <<>>),
-                    MsgId = maps:get(<<"id">>, Msg),
-                    Url = zulip_url:narrow_url(
-                        iolist_to_binary(BaseUrl), StreamId, Topic, MsgId),
-                    Plaintext = html_to_text(iolist_to_binary(BaseUrl), Content),
-                    Text = iolist_to_binary([
-                        <<"#">>, Channel, <<" / ">>, Topic, <<"\n">>,
-                        Sender, <<": ">>, Plaintext, <<"\n\n">>,
-                        Url
-                    ]),
-                    %% Print to stdout
+    StreamId = maps:get(<<"stream_id">>, Msg, -1),
+    case zulip_fmt:should_forward(StreamId, Filter) of
+        true ->
+            case zulip_fmt:format_message(BaseUrl, Msg) of
+                {ok, Text} ->
                     io:format("~ts~n~n", [Text]),
-                    %% Send to Signal
                     send_signal(Text, State);
-                false ->
+                skip ->
                     ok
             end;
-        _ ->
+        false ->
             ok
     end;
 handle_event(_, _) ->
@@ -135,38 +119,6 @@ log_event(Event, Fields) ->
     Base = [{<<"ts">>, Ts}, {<<"event">>, Event} | Fields],
     Line = jiffy:encode({Base}),
     io:format(standard_error, "~s~n", [Line]).
-
-should_forward(_StreamId, []) -> true;
-should_forward(StreamId, Filter) -> lists:member(StreamId, Filter).
-
-%% Convert HTML to plaintext, preserving link targets.
-%% Turns <a href="/user_uploads/...">file.png</a> into "file.png (https://...)"
-html_to_text(BaseUrl, Html) ->
-    %% Replace <a href="...">text</a> with "text (resolved_url)"
-    WithLinks = re:replace(Html,
-        <<"<a[^>]*href=\"([^\"]*)\"[^>]*>([^<]*)</a>">>,
-        fun(Match, _) -> expand_link(BaseUrl, Match) end,
-        [global, {return, binary}]),
-    %% Strip remaining tags
-    re:replace(WithLinks, <<"<[^>]*>">>, <<>>, [global, {return, binary}]).
-
-expand_link(BaseUrl, Match) ->
-    case re:run(Match, <<"<a[^>]*href=\"([^\"]*)\"[^>]*>([^<]*)</a>">>,
-                [{capture, [1, 2], binary}]) of
-        {match, [Href, Text]} ->
-            FullUrl = resolve_url(BaseUrl, Href),
-            case FullUrl =:= Text of
-                true -> FullUrl;
-                false -> <<Text/binary, " (", FullUrl/binary, ")">>
-            end;
-        nomatch ->
-            Match
-    end.
-
-resolve_url(BaseUrl, <<"/", _/binary>> = Path) ->
-    <<BaseUrl/binary, Path/binary>>;
-resolve_url(_BaseUrl, Url) ->
-    Url.
 
 %% HTTP helpers
 
