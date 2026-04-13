@@ -1,2 +1,4 @@
 _build/
 config/sys.config
+erl_crash.dump
+result
