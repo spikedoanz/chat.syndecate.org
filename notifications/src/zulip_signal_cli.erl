@@ -1,5 +1,6 @@
 -module(zulip_signal_cli).
 -export([main/0]).
+-export([html_to_text/2, should_forward/2]).
 
 %% Single process: polls Zulip, prints formatted messages to stdout,
 %% sends to Signal, and logs status as JSONL.
