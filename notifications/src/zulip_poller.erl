@@ -138,9 +138,11 @@ process_message(Msg, #{base_url := BaseUrl, channel_filter := Filter}) ->
                     MsgId = maps:get(<<"id">>, Msg),
                     Url = zulip_url:narrow_url(
                         iolist_to_binary(BaseUrl), StreamId, Topic, MsgId),
+                    Stripped = strip_html(Content),
+                    Resolved = resolve_uploads(iolist_to_binary(BaseUrl), Stripped),
                     Text = iolist_to_binary([
                         <<"#">>, Channel, <<" / ">>, Topic, <<"\n">>,
-                        Sender, <<": ">>, strip_html(Content), <<"\n\n">>,
+                        Sender, <<": ">>, Resolved, <<"\n\n">>,
                         Url
                     ]),
                     signal_sender:send(binary_to_list(Text));
@@ -159,3 +161,8 @@ should_forward(StreamId, Filter) ->
 %% Naive HTML tag stripping — Zulip returns HTML content by default.
 strip_html(Html) ->
     re:replace(Html, <<"<[^>]*>">>, <<>>, [global, {return, binary}]).
+
+resolve_uploads(BaseUrl, Text) ->
+    re:replace(Text, <<"/user_uploads/">>,
+        <<BaseUrl/binary, "/user_uploads/">>,
+        [global, {return, binary}]).

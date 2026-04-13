@@ -2,7 +2,7 @@
   {zulip_signal, [
     %% Zulip API credentials
     {zulip_url, "https://chat.syndecate.org"},
-    {zulip_email, "bot-email@chat.syndecate.org"},
+    {zulip_email, "CHANGEME-bot@chat.syndecate.org"},
     {zulip_api_key, "CHANGEME"},
 
     %% Signal configuration
