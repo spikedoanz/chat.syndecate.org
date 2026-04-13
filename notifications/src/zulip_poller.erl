@@ -138,11 +138,10 @@ process_message(Msg, #{base_url := BaseUrl, channel_filter := Filter}) ->
                     MsgId = maps:get(<<"id">>, Msg),
                     Url = zulip_url:narrow_url(
                         iolist_to_binary(BaseUrl), StreamId, Topic, MsgId),
-                    Resolved = resolve_uploads(iolist_to_binary(BaseUrl), Content),
-                    Stripped = strip_html(Resolved),
+                    Plaintext = html_to_text(iolist_to_binary(BaseUrl), Content),
                     Text = iolist_to_binary([
                         <<"#">>, Channel, <<" / ">>, Topic, <<"\n">>,
-                        Sender, <<": ">>, Stripped, <<"\n\n">>,
+                        Sender, <<": ">>, Plaintext, <<"\n\n">>,
                         Url
                     ]),
                     signal_sender:send(binary_to_list(Text));
@@ -158,11 +157,27 @@ should_forward(_StreamId, []) ->
 should_forward(StreamId, Filter) ->
     lists:member(StreamId, Filter).
 
-%% Naive HTML tag stripping — Zulip returns HTML content by default.
-strip_html(Html) ->
-    re:replace(Html, <<"<[^>]*>">>, <<>>, [global, {return, binary}]).
+html_to_text(BaseUrl, Html) ->
+    WithLinks = re:replace(Html,
+        <<"<a[^>]*href=\"([^\"]*)\"[^>]*>([^<]*)</a>">>,
+        fun(Match, _) -> expand_link(BaseUrl, Match) end,
+        [global, {return, binary}]),
+    re:replace(WithLinks, <<"<[^>]*>">>, <<>>, [global, {return, binary}]).
 
-resolve_uploads(BaseUrl, Text) ->
-    re:replace(Text, <<"/user_uploads/">>,
-        <<BaseUrl/binary, "/user_uploads/">>,
-        [global, {return, binary}]).
+expand_link(BaseUrl, Match) ->
+    case re:run(Match, <<"<a[^>]*href=\"([^\"]*)\"[^>]*>([^<]*)</a>">>,
+                [{capture, [1, 2], binary}]) of
+        {match, [Href, Text]} ->
+            FullUrl = resolve_url(BaseUrl, Href),
+            case FullUrl =:= Text of
+                true -> FullUrl;
+                false -> <<Text/binary, " (", FullUrl/binary, ")">>
+            end;
+        nomatch ->
+            Match
+    end.
+
+resolve_url(BaseUrl, <<"/", _/binary>> = Path) ->
+    <<BaseUrl/binary, Path/binary>>;
+resolve_url(_BaseUrl, Url) ->
+    Url.
