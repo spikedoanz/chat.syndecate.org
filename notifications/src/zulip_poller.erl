@@ -138,11 +138,11 @@ process_message(Msg, #{base_url := BaseUrl, channel_filter := Filter}) ->
                     MsgId = maps:get(<<"id">>, Msg),
                     Url = zulip_url:narrow_url(
                         iolist_to_binary(BaseUrl), StreamId, Topic, MsgId),
-                    Stripped = strip_html(Content),
-                    Resolved = resolve_uploads(iolist_to_binary(BaseUrl), Stripped),
+                    Resolved = resolve_uploads(iolist_to_binary(BaseUrl), Content),
+                    Stripped = strip_html(Resolved),
                     Text = iolist_to_binary([
                         <<"#">>, Channel, <<" / ">>, Topic, <<"\n">>,
-                        Sender, <<": ">>, Resolved, <<"\n\n">>,
+                        Sender, <<": ">>, Stripped, <<"\n\n">>,
                         Url
                     ]),
                     signal_sender:send(binary_to_list(Text));

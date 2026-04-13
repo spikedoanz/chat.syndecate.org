@@ -88,11 +88,11 @@ handle_event(#{<<"type">> := <<"message">>, <<"message">> := Msg}, State) ->
                     MsgId = maps:get(<<"id">>, Msg),
                     Url = zulip_url:narrow_url(
                         iolist_to_binary(BaseUrl), StreamId, Topic, MsgId),
-                    Stripped = strip_html(Content),
-                    Resolved = resolve_uploads(iolist_to_binary(BaseUrl), Stripped),
+                    Resolved = resolve_uploads(iolist_to_binary(BaseUrl), Content),
+                    Stripped = strip_html(Resolved),
                     Text = iolist_to_binary([
                         <<"#">>, Channel, <<" / ">>, Topic, <<"\n">>,
-                        Sender, <<": ">>, Resolved, <<"\n\n">>,
+                        Sender, <<": ">>, Stripped, <<"\n\n">>,
                         Url
                     ]),
                     %% Print to stdout
@@ -109,20 +109,19 @@ handle_event(_, _) ->
     ok.
 
 send_signal(Text, #{cli_path := CliPath, signal_account := Account, signal_group_id := GroupId}) ->
-    %% Write message to temp file to avoid shell escaping issues
-    TmpFile = "/tmp/zulip_signal_msg.txt",
-    ok = file:write_file(TmpFile, Text),
-    Cmd = lists:flatten(io_lib:format("~s -u ~s send -g '~s' --message-from-stdin < '~s' 2>&1",
-        [CliPath, Account, GroupId, TmpFile])),
-    Output = os:cmd(Cmd),
-    %% signal-cli prints a timestamp on success (last line is a number)
-    case re:run(Output, "[0-9]+\\s*$") of
-        {match, _} ->
+    Cmd = lists:flatten(io_lib:format("~s -u ~s send -g '~s' --message-from-stdin 2>&1",
+        [CliPath, Account, GroupId])),
+    Port = open_port({spawn, Cmd}, [exit_status, use_stdio, binary, stream]),
+    port_command(Port, Text),
+    port_close(Port),
+    %% Collect exit status
+    receive
+        {Port, {exit_status, 0}} ->
             log_event(<<"signal_sent">>, [{<<"status">>, <<"ok">>}]);
-        nomatch when Output =:= [] ->
-            log_event(<<"signal_sent">>, [{<<"status">>, <<"ok">>}]);
-        nomatch ->
-            log_event(<<"signal_error">>, [{<<"output">>, list_to_binary(string:trim(Output))}])
+        {Port, {exit_status, Code}} ->
+            log_event(<<"signal_error">>, [{<<"exit_code">>, Code}])
+    after 30000 ->
+            log_event(<<"signal_error">>, [{<<"error">>, <<"timeout">>}])
     end.
 
 %% JSONL logging to stderr
