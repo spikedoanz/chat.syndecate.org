@@ -19,11 +19,10 @@ handle_call(_Request, _From, State) ->
     {reply, ok, State}.
 
 handle_cast({send, Message}, #{cli_path := CliPath, account := Account, group_id := GroupId} = State) ->
-    %% Escape single quotes in message for shell safety
-    Escaped = re:replace(Message, "'", "'\\''", [global, {return, list}]),
-    Cmd = lists:flatten(io_lib:format("~s -u ~s send -g '~s' -m '~s' 2>&1",
-        [CliPath, Account, GroupId, Escaped])),
-    logger:info("Running: ~s", [Cmd]),
-    Output = os:cmd(Cmd),
-    logger:info("signal-cli output: ~s", [Output]),
+    Cmd = lists:flatten(io_lib:format("~s -u ~s send -g '~s' --message-from-stdin 2>&1",
+        [CliPath, Account, GroupId])),
+    logger:info("Sending signal message"),
+    Port = open_port({spawn, Cmd}, [exit_status, use_stdio, binary]),
+    port_command(Port, list_to_binary(Message)),
+    port_close(Port),
     {noreply, State}.
