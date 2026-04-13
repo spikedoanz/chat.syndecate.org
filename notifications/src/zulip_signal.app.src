@@ -1,0 +1,8 @@
+{application, zulip_signal, [
+  {description, "Zulip to Signal notification bridge"},
+  {vsn, "0.1.0"},
+  {registered, [zulip_poller, signal_sender]},
+  {mod, {zulip_signal_app, []}},
+  {applications, [kernel, stdlib, hackney, jiffy, inets, crypto, ssl]},
+  {env, []}
+]}.
